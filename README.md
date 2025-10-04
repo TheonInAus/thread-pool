@@ -1,70 +1,120 @@
-# Thread Pool (C++17, header-only)
+# Thread Pool (C++11)
 
-A small, production‑style thread pool suitable for interviews and real use.
+A tiny C++11 thread pool with a bounded blocking queue.  
+Features: task submission via `std::function`, backpressure (bounded queue), optional dynamic scaling (core/max), exception-safe workers, and graceful shutdown (poison pills).
 
-## Highlights
+---
 
-- **C++17 header-only** (`include/thread_pool.hpp`), no deps
-- **std::future** interface: `auto fut = pool.submit(f, args...)`
-- **Graceful stop** in destructor; no task loss
-- **Optional bounded queue** to provide backpressure
-- **Utility**: `parallel_for(first, last, fn)` with simple block partitioning
-- **Exception-safe**: exceptions propagate via `future::get()`
+## Layout
 
-## Build & Run
-
-```bash
-mkdir -p build && cd build
-cmake .. && cmake --build . -j
-./demo
-./smoke # tiny sanity test
+```
+.
+├── include
+│   ├── block_queue.hpp
+│   └── thread_pool.hpp
+├── src
+│   └── thread_pool.cpp
+└── tests
+    └── test.cpp
 ```
 
-## API
+---
+
+## Requirements
+
+- A C++11 compiler (g++/clang++)
+- POSIX threads (Linux/macOS: `-pthread`)
+
+---
+
+## Build & Run (single command)
+
+From the project root:
+
+```bash
+g++ -std=c++11 -O2 -pthread   -Iinclude   tests/test.cpp src/thread_pool.cpp   -o tp_tests
+
+./tp_tests
+```
+
+Expected tail of output (timings may vary):
+
+```
+[RUN] sum & shutdown
+Thread pool destructor called
+Destructor: Waiting for all tasks to be processed...
+Destructor: All tasks processed. Shutting down worker threads...
+Destructor: Poison pills sent. Joining worker threads...
+Destructor: All worker threads joined. Thread pool destroyed.
+[RUN] visible check
+expected=50005000 (pool dtor returns after sum reaches this)
+Thread pool destructor called
+Destructor: Waiting for all tasks to be processed...
+Destructor: All tasks processed. Shutting down worker threads...
+Destructor: Poison pills sent. Joining worker threads...
+Destructor: All worker threads joined. Thread pool destroyed.
+[RUN] backpressure-ish
+submitted 5000 tasks in ~2 ms (queue capacity may slow submission)
+Thread pool destructor called
+Destructor: Waiting for all tasks to be processed...
+Destructor: All tasks processed. Shutting down worker threads...
+Destructor: Poison pills sent. Joining worker threads...
+Destructor: All worker threads joined. Thread pool destroyed.
+OK
+```
+
+---
+
+## Common Issues
+
+- **chrono literals error** (`invalid suffix 'ms'`) We’re on C++11. Ensure `tests/test.cpp` uses:
+
+  ```cpp
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  ```
+
+- **Hangs on shutdown** The pool uses poison pills to wake workers; make sure you’re using the provided `thread_pool.cpp`.
+
+---
+
+## Optional: Debug/Sanitizers
+
+Address/UB Sanitizers help catch memory bugs quickly (clang++/g++ on Linux/macOS):
+
+```bash
+clang++ -std=c++11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer   -Iinclude tests/test.cpp src/thread_pool.cpp   -pthread -o tp_tests_asan
+
+./tp_tests_asan
+```
+
+---
+
+## Using in Your Project
+
+Include headers and compile/link `src/thread_pool.cpp` with your sources.  
+Minimal example:
 
 ```cpp
-namespace tp {
-class thread_pool {
-public:
-explicit thread_pool(std::size_t workers = std::thread::hardware_concurrency(),
-std::size_t max_queue = 0 /*0 = unbounded*/);
+#include "thread_pool.hpp"
+#include <atomic>
+#include <iostream>
 
+int main() {
+    thread_pool pool(4, 8);             // core=4, max=8 (queue cap uses default)
+    std::atomic<int> sum{0};
 
-template <class F, class... Args>
-auto submit(F&& f, Args&&... args) -> std::future<std::invoke_result_t<F, Args...>>;
+    for (int i = 0; i < 10000; ++i) {
+        pool.submit([&]{ sum.fetch_add(1, std::memory_order_relaxed); });
+    }
 
-
-void stop() noexcept; // graceful: drain and join
-std::size_t size() const noexcept;
-
-
-template <class Index, class Func>
-void parallel_for(Index first, Index last, Func fn);
-};
+    // Pool destructor waits for tasks to finish & joins workers.
+    std::cout << "Done\n";
+    return 0;
 }
 ```
 
-## Design Notes
-
-- **Queue**: `std::deque<std::function<void()>>` for FIFO fairness and cache friendliness.
-- **Bounded mode**: when `max_queue>0`, producers block on `cv_not_full_` (classic producer/consumer), preventing OOM under load.
-- **Exception handling**: tasks run inside try/catch; user-visible exceptions rethrow from `future::get()`.
-- **Shutdown**: `stop_` flag + drain existing tasks; workers exit when queue empty.
-
-## What interviewers may ask (with talking points)
-
-1. **Why futures vs. callbacks?** Futures integrate with standard C++; exceptions/values travel through `get()`.
-2. **Why condition variables, not busy-wait?** Avoid CPU spin; CVs scale and are power-efficient.
-3. **Can we add task prioritization?** Replace deque with a priority queue, add a `submit(priority, f)` overload.
-4. **How to avoid head-of-line blocking?** Use per-thread deques + work-stealing (Chase-Lev) for throughput; here we keep simplicity.
-5. **How to support stop-now?** Track a `force_stop_` flag; cancel remaining tasks or return `std::future` with broken-promise error.
-6. **ABA / lost wakeups?** Guarded by mutex + CV with predicates; no ABA on queue ops.
-7. **Thread affinity?** Add pinning via OS APIs if needed for cache locality.
-
-## Bench idea (optional)
-
-- Compare sequential vs. `parallel_for` on filling a large vector. Use `std::chrono`.
+---
 
 ## License
 
-MIT
+MIT (or your choice)
