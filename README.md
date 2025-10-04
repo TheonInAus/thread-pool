@@ -27,7 +27,7 @@ Features: task submission via `std::function`, backpressure (bounded queue), opt
 
 ---
 
-## Build & Run (single command)
+## Build & Run Tests
 
 From the project root:
 
@@ -61,6 +61,25 @@ Destructor: All tasks processed. Shutting down worker threads...
 Destructor: Poison pills sent. Joining worker threads...
 Destructor: All worker threads joined. Thread pool destroyed.
 OK
+```
+
+```bash
+g++ -std=c++11 -O2 -pthread   -Iinclude   tests/test_scale.cpp src/thread_pool.cpp   -o test_scale
+
+./test_scale
+```
+
+Expected tail of output (timings may vary):
+
+```
+[RUN] dynamic scaling when core threads are busy
+Probe started after ~1 ms: scaling likely WORKED (extra worker handled probe while cores were busy)
+OK
+Thread pool destructor called
+Destructor: Waiting for all tasks to be processed...
+Destructor: All tasks processed. Shutting down worker threads...
+Destructor: Poison pills sent. Joining worker threads...
+Destructor: All worker threads joined. Thread pool destroyed.
 ```
 
 ---
