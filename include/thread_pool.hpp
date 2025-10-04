@@ -16,10 +16,11 @@ private:
     int max_threads_num;
     int core_threads_num;
     int total_threads_num;
-    int active_threads_num = 0;
-    bool accept_new_tasks = true;
+    int active_threads_num;
+    int max_queue_size;
+    bool accept_new_tasks;
 public:
-    thread_pool(int core_threads_num, int max_threads_num, size_t queue_max_size=100);
+    thread_pool(int core_threads_num, int max_threads_num, int queue_max_size=100);
     void worker_loop();
     void submit(std::function<void()> task);
     ~thread_pool();

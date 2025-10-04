@@ -18,7 +18,7 @@ public:
 
     T pop() {
         std::unique_lock<std::mutex> lock(mtx);
-        cv_not_empty.wait(lock, [this]() { return queue.empty(); });
+        cv_not_empty.wait(lock, [this]() { return queue.size() > 0; });
         T item = queue.front();
         queue.pop_front();
         cv_not_full.notify_one();
